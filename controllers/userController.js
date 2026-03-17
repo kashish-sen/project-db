@@ -1,25 +1,42 @@
-const User = require("../models/userModel");
+const express = require("express");
+const router = express.Router();
+const mongoose = require("mongoose");
 
-const addUser = async (req, res) => {
+/* ---------------- SUBMIT IDEA ---------------- */
 
+router.post("/submit", async (req, res) => {
   try {
+    const ideaData = req.body;
 
-    const user = new User(req.body);
+    const db = mongoose.connection.db;
 
-    await user.save();
+    const result = await db.collection("ideas").insertOne(ideaData);
 
-    res.json({
-      message: "User added successfully"
+    res.status(201).json({
+      message: "Idea submitted successfully",
+      data: result,
     });
-
   } catch (error) {
-
-    res.json({
-      error: error.message
-    });
-
+    console.error("Error submitting idea:", error);
+    res.status(500).json({ message: "Server error" });
   }
+});
 
-};
+/* ---------------- GET IDEAS ---------------- */
 
-module.exports = { addUser };
+router.get("/ideas", async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+
+    const ideas = await db.collection("ideas").find().toArray();
+
+    res.status(200).json(ideas);
+  } catch (error) {
+    console.error("Error fetching ideas:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ---------------- EXPORT ROUTER ---------------- */
+
+module.exports = router;

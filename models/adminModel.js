@@ -1,36 +1,50 @@
 const mongoose = require("mongoose");
 
 const adminSchema = new mongoose.Schema({
+    
+    name: {
+        type: String,
+        required: true,
+        trim: true
+    },
 
-admin_id:String,
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true,
+        match: [/^\S+@\S+\.\S+$/, "Invalid email format"]
+    },
 
-admin_name:String,
+    password_hash: {
+        type: String,
+        required: true,
+        minlength: 60
+    },
 
-email:String,
+    role: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "AdminRole",
+        required: true
+    },
 
-password_hash:String,
+    status: {
+        type: String,
+        enum: ["active", "inactive", "suspended"],
+        default: "active"
+    },
 
-phone_number:String,
+    last_login: {
+        type: Date
+    }
 
-role:{
-type:mongoose.Schema.Types.ObjectId,
-ref:"AdminRole"
-},
+}, { timestamps: true });
 
-permissions:[String],
+/* ---------------- INDEX OPTIMIZATION ---------------- */
 
-last_login:Date,
+adminSchema.index({ email: 1 });
+adminSchema.index({ role: 1 });
+adminSchema.index({ status: 1 });
+adminSchema.index({ last_login: -1 });
 
-status:{
-type:String,
-default:"active"
-},
-
-created_at:{
-type:Date,
-default:Date.now
-}
-
-});
-
-module.exports = mongoose.model("Admin",adminSchema);
+module.exports = mongoose.model("Admin", adminSchema);

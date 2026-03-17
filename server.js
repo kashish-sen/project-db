@@ -4,32 +4,49 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
-const userRoutes = require("./routes/userRoutes");
+/* ROUTES */
+const userRoutes = require("./controllers/userController");
 
-const app = express();   // ✅ create express app FIRST
+/* DATABASE VIEWS */
+const createViews = require("./database/databaseViews");
 
-// middleware
+const app = express();
+
+/* ---------------- MIDDLEWARE ---------------- */
+
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
-.then(() => {
-  console.log("MongoDB Connected");
-})
-.catch((err) => {
-  console.log(err);
-});
+/* ---------------- DATABASE CONNECTION ---------------- */
 
-// routes
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(async () => {
+    console.log("MongoDB Connected Successfully");
+
+    try {
+      await createViews();
+      console.log("Database Views Initialized");
+    } catch (error) {
+      console.log("View initialization error:", error.message);
+    }
+  })
+  .catch((error) => {
+    console.error("MongoDB Connection Failed:", error);
+  });
+
+/* ---------------- ROUTES ---------------- */
+
 app.use("/api/users", userRoutes);
 
-// test route
+/* TEST ROUTE */
+
 app.get("/", (req, res) => {
-  res.send("Server running");
+  res.send("API is running successfully");
 });
 
-// server start
+/* ---------------- SERVER ---------------- */
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
