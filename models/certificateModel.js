@@ -2,123 +2,70 @@ const mongoose = require("mongoose");
 
 const certificateSchema = new mongoose.Schema({
 
-certificate_id:{
-type:String,
-required:true,
-unique:true
-},
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
-user_id:{
-type:String,
-required:true
-},
+    course_id: { type: mongoose.Schema.Types.ObjectId, ref: "Course", required: true },
 
-course_id:{
-type:String,
-required:true
-},
+    certificate_hash: {
+        type: String,
+        unique: true,
+        required: true
+    },
 
-certificate_url:{
-type:String,
-required:true
-},
+    certificate_url: String,
+    thumbnail: String,
 
-issued_at:{
-type:Date,
-default:Date.now
-}
+    issue_date: { type: Date, default: Date.now },
 
-});
+    metadata: {
+        instructor: String,
+        category: String,
+        level: String,
+        duration: String
+    }
 
-/* INDEX OPTIMIZATION */
+}, { timestamps: true });
 
-certificateSchema.index({ user_id:1 });
-certificateSchema.index({ course_id:1 });
+/* INDEXES */
+certificateSchema.index({ certificate_hash: 1 });
+certificateSchema.index({ user_id: 1 });
+certificateSchema.index({ course_id: 1 });
+
+/* VIEW (for verification page) */
+certificateSchema.statics.verifyCertificate = async function (hash) {
+    return this.aggregate([
+        { $match: { certificate_hash: hash } },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user_id",
+                foreignField: "_id",
+                as: "user"
+            }
+        },
+        { $unwind: "$user" },
+
+        {
+            $lookup: {
+                from: "courses",
+                localField: "course_id",
+                foreignField: "_id",
+                as: "course"
+            }
+        },
+        { $unwind: "$course" },
+
+        {
+            $project: {
+                studentName: "$user.name",
+                courseTitle: "$course.title",
+                issueDate: "$issue_date",
+                certificateUrl: "$certificate_url",
+                thumbnail: "$thumbnail"
+            }
+        }
+    ]);
+};
 
 module.exports = mongoose.model("Certificate", certificateSchema);
-
-
-/* =====================================================
-Additional Index Optimization
-===================================================== */
-
-// Compound index for user + course certificate lookup
-certificateSchema.index({ user_id:1, course_id:1 });
-
-// Index for sorting certificates by issue date
-certificateSchema.index({ issued_at:-1 });
-
-
-
-/* =====================================================
-Partial Indexing
-===================================================== */
-
-// Index records where certificate URL exists
-certificateSchema.index(
-{ certificate_url:1 },
-{ partialFilterExpression:{ certificate_url:{ $exists:true } } }
-);
-
-// Index certificates issued after a date
-certificateSchema.index(
-{ issued_at:1 },
-{ partialFilterExpression:{ issued_at:{ $exists:true } } }
-);
-
-
-
-/* =====================================================
-Stored Procedures (Model Methods)
-===================================================== */
-
-// Get certificates by user
-certificateSchema.statics.getCertificatesByUser = function(userId){
-return this.find({ user_id:userId });
-};
-
-// Get certificates by course
-certificateSchema.statics.getCertificatesByCourse = function(courseId){
-return this.find({ course_id:courseId });
-};
-
-// Issue new certificate
-certificateSchema.statics.issueCertificate = function(data){
-return this.create(data);
-};
-
-
-
-/* =====================================================
-Views (Aggregation Pipelines)
-===================================================== */
-
-// View: certificates per course
-certificateSchema.statics.certificatesPerCourseView = function(){
-return this.aggregate([
-{
-$group:{
-_id:"$course_id",
-total_certificates:{ $sum:1 }
-}
-},
-{
-$sort:{ total_certificates:-1 }
-}
-]);
-};
-
-// View: certificates per user
-certificateSchema.statics.certificatesPerUserView = function(){
-return this.aggregate([
-{
-$group:{
-_id:"$user_id",
-total_certificates:{ $sum:1 }
-}
-},
-{
-$sort:{ total_certificates:-1 }
-}
-]);
-};

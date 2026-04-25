@@ -1,121 +1,96 @@
-const mongoose = require("mongoose");
+// models/platformAnalyticsModel.js
+// Covers: Admin.tsx analytics tab (platform-wide stats, date range filter,
+//         per-course enrollment lookup, user growth, revenue)
+const mongoose = require('mongoose')
 
-const platformAnalyticsSchema = new mongoose.Schema({
+// Daily platform-wide snapshot
+const platformDailySchema = new mongoose.Schema({
+    date: { type: Date, required: true, unique: true },
+    year: { type: Number, required: true },
+    month: { type: Number, required: true },
+    day: { type: Number, required: true },
 
-analytics_id:String,
+    // User metrics
+    new_registrations: { type: Number, default: 0, min: 0 },
+    active_users: { type: Number, default: 0, min: 0 },
+    total_users_cumulative: { type: Number, default: 0, min: 0 },
 
-total_users:Number,
+    // Course metrics
+    new_enrollments: { type: Number, default: 0, min: 0 },
+    courses_submitted: { type: Number, default: 0, min: 0 },
+    courses_approved: { type: Number, default: 0, min: 0 },
+    courses_completed: { type: Number, default: 0, min: 0 },
 
-total_instructors:Number,
+    // Revenue
+    gross_revenue: { type: Number, default: 0, min: 0 },
+    net_revenue: { type: Number, default: 0, min: 0 },
+    refunds: { type: Number, default: 0, min: 0 },
+    platform_revenue: { type: Number, default: 0, min: 0 },
 
-total_courses:Number,
+    // Community
+    new_posts: { type: Number, default: 0, min: 0 },
+    new_questions: { type: Number, default: 0, min: 0 }
+}, {
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+})
 
-total_enrollments:Number,
+platformDailySchema.index({ date: -1 })
+platformDailySchema.index({ year: 1, month: 1 })
 
-total_revenue:Number,
+// Aggregate stats document (single doc, upserted frequently)
+const platformStatsSchema = new mongoose.Schema({
+    key: { type: String, default: 'global', unique: true },
 
-active_users:Number,
+    // Totals (Admin.tsx stats cards)
+    total_users: { type: Number, default: 0 },
+    total_students: { type: Number, default: 0 },
+    total_instructors: { type: Number, default: 0 },
+    total_admins: { type: Number, default: 0 },
+    suspended_users: { type: Number, default: 0 },
 
-active_courses:Number,
+    total_courses: { type: Number, default: 0 },
+    published_courses: { type: Number, default: 0 },
+    pending_courses: { type: Number, default: 0 },
+    draft_courses: { type: Number, default: 0 },
 
-average_course_rating:Number,
+    total_enrollments: { type: Number, default: 0 },
+    total_completions: { type: Number, default: 0 },
+    total_certificates: { type: Number, default: 0 },
 
-updated_at:{
-type:Date,
-default:Date.now
-}
+    total_revenue: { type: Number, default: 0 },
+    platform_revenue: { type: Number, default: 0 },
+    instructor_payouts: { type: Number, default: 0 },
 
-});
+    avg_course_rating: { type: Number, default: 0 },
+    total_reviews: { type: Number, default: 0 },
 
-module.exports = mongoose.model("PlatformAnalytics",platformAnalyticsSchema);
+    last_computed_at: { type: Date, default: Date.now }
+}, {
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+})
 
+platformStatsSchema.index({ key: 1 }, { unique: true })
 
-/* =====================================================
-Index Optimization
-===================================================== */
+// Per-course enrollment snapshot for Admin analytics drill-down
+const courseEnrollmentSnapshotSchema = new mongoose.Schema({
+    course_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Course',
+        required: true
+    },
+    date: { type: Date, required: true },
+    enrollment_count: { type: Number, default: 0 },
+    revenue: { type: Number, default: 0 },
+    completion_rate: { type: Number, default: 0, min: 0, max: 100 }
+}, {
+    timestamps: false
+})
 
-// Index for analytics id lookup
-platformAnalyticsSchema.index({ analytics_id:1 });
+courseEnrollmentSnapshotSchema.index({ course_id: 1, date: -1 }, { unique: true })
+courseEnrollmentSnapshotSchema.index({ date: -1 })
 
-// Index for latest analytics updates
-platformAnalyticsSchema.index({ updated_at:-1 });
+const PlatformDailyStats = mongoose.model('PlatformDailyStats', platformDailySchema)
+const PlatformStats = mongoose.model('PlatformStats', platformStatsSchema)
+const CourseEnrollmentSnapshot = mongoose.model('CourseEnrollmentSnapshot', courseEnrollmentSnapshotSchema)
 
-// Index for revenue based analytics queries
-platformAnalyticsSchema.index({ total_revenue:-1 });
-
-// Index for active user tracking
-platformAnalyticsSchema.index({ active_users:-1 });
-
-
-
-/* =====================================================
-Partial Indexing
-===================================================== */
-
-// Index only records where revenue exists
-platformAnalyticsSchema.index(
-{ total_revenue:1 },
-{ partialFilterExpression:{ total_revenue:{ $exists:true } } }
-);
-
-// Index only records where active users exist
-platformAnalyticsSchema.index(
-{ active_users:1 },
-{ partialFilterExpression:{ active_users:{ $exists:true } } }
-);
-
-
-
-/* =====================================================
-Stored Procedures (Model Methods)
-===================================================== */
-
-// Get latest analytics record
-platformAnalyticsSchema.statics.getLatestAnalytics = function(){
-return this.findOne().sort({ updated_at:-1 });
-};
-
-// Update analytics data
-platformAnalyticsSchema.statics.updateAnalytics = function(analyticsId,data){
-return this.findOneAndUpdate(
-{ analytics_id:analyticsId },
-{ $set:data, updated_at:new Date() },
-{ new:true }
-);
-};
-
-
-
-/* =====================================================
-Views (Aggregation Pipelines)
-===================================================== */
-
-// View: platform growth summary
-platformAnalyticsSchema.statics.platformGrowthView = function(){
-return this.aggregate([
-{
-$project:{
-total_users:1,
-total_instructors:1,
-total_courses:1,
-total_enrollments:1,
-total_revenue:1,
-updated_at:1
-}
-}
-]);
-};
-
-// View: active platform performance
-platformAnalyticsSchema.statics.activePlatformMetricsView = function(){
-return this.aggregate([
-{
-$project:{
-active_users:1,
-active_courses:1,
-average_course_rating:1,
-updated_at:1
-}
-}
-]);
-};
+module.exports = { PlatformDailyStats, PlatformStats, CourseEnrollmentSnapshot }

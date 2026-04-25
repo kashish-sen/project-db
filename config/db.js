@@ -1,15 +1,17 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const connectDB = async () => {
   try {
+    const conn = await mongoose.connect(process.env.MONGO_URI, {
+      autoIndex: true,
+      maxPoolSize: 10,
+    });
 
-    await mongoose.connect("mongodb+srv://woxedgeofficial_db_user:admin123@cluster0.ycwvn54.mongodb.net/?appName=Cluster0");
-
-    console.log("MongoDB Connected");
-
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    process.exit(1);
   }
 };
 
-module.exports = connectDB;
+export default connectDB;

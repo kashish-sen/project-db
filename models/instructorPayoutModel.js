@@ -1,129 +1,50 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose')
 
-const instructorPayoutSchema = new mongoose.Schema({
-
-  payout_id: String,
-
-  instructor_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Instructor"
-  },
-
-  instructor_name: String,
-
-  amount: Number,
-
-  currency: String,
-
-  payment_method: String,
-
-  transaction_id: String,
-
-  status: String,
-
-  requested_at: Date,
-
-  processed_at: Date
-
-});
-
-module.exports = mongoose.model("InstructorPayout", instructorPayoutSchema);
-
-
-/* =====================================================
-Index Optimization
-===================================================== */
-
-// Index for instructor payout lookup
-instructorPayoutSchema.index({ instructor_id: 1 });
-
-// Index for payout status filtering
-instructorPayoutSchema.index({ status: 1 });
-
-// Index for sorting payouts by request date
-instructorPayoutSchema.index({ requested_at: -1 });
-
-// Index for transaction lookup
-instructorPayoutSchema.index({ transaction_id: 1 });
-
-// Compound index for instructor + status queries
-instructorPayoutSchema.index({ instructor_id: 1, status: 1 });
-
-
-
-/* =====================================================
-Partial Indexing
-===================================================== */
-
-// Index only pending payouts
-instructorPayoutSchema.index(
-  { status: 1 },
-  { partialFilterExpression: { status: "pending" } }
-);
-
-// Index payouts that have a transaction id
-instructorPayoutSchema.index(
-  { transaction_id: 1 },
-  { partialFilterExpression: { transaction_id: { $exists: true } } }
-);
-
-
-
-/* =====================================================
-Stored Procedures (Model Methods)
-===================================================== */
-
-// Get payouts by instructor
-instructorPayoutSchema.statics.getPayoutsByInstructor = function(instructorId) {
-  return this.find({ instructor_id: instructorId });
-};
-
-// Get pending payouts
-instructorPayoutSchema.statics.getPendingPayouts = function() {
-  return this.find({ status: "pending" });
-};
-
-// Mark payout as processed
-instructorPayoutSchema.statics.processPayout = function(payoutId, transactionId) {
-  return this.findOneAndUpdate(
-    { payout_id: payoutId },
-    { status: "processed", transaction_id: transactionId, processed_at: new Date() },
-    { new: true }
-  );
-};
-
-
-
-/* =====================================================
-Views (Aggregation Pipelines)
-===================================================== */
-
-// View: total payouts per instructor
-instructorPayoutSchema.statics.payoutsPerInstructorView = function() {
-  return this.aggregate([
-    {
-      $group: {
-        _id: "$instructor_id",
-        instructor_name: { $first: "$instructor_name" },
-        total_payout: { $sum: "$amount" },
-        total_transactions: { $sum: 1 }
-      }
+const payoutSchema = new mongoose.Schema({
+    instructor_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
     },
-    {
-      $sort: { total_payout: -1 }
-    }
-  ]);
-};
 
-// View: payout status summary
-instructorPayoutSchema.statics.payoutStatusSummaryView = function() {
-  return this.aggregate([
-    {
-      $group: {
-        _id: "$status",
-        total_payouts: { $sum: 1 },
-        total_amount: { $sum: "$amount" }
-      }
-    }
-  ]);
-};
+    // Period this payout covers
+    period_start: { type: Date, required: true },
+    period_end: { type: Date, required: true },
+
+    // Amounts
+    gross_earnings: { type: Number, required: true, min: 0 },
+    platform_fee: { type: Number, required: true, min: 0 },
+    refund_deductions: { type: Number, default: 0, min: 0 },
+    tax_deducted: { type: Number, default: 0, min: 0 },  // TDS for Indian instructors
+    net_payout: { type: Number, required: true, min: 0 },
+
+    // Status
+    status: {
+        type: String,
+        enum: ['pending', 'processing', 'paid', 'failed', 'on_hold'],
+        default: 'pending'
+    },
+    paid_at: { type: Date },
+    transaction_ref: { type: String, trim: true },   // bank transfer reference
+
+    // Breakdown by course
+    course_breakdown: [{
+        course_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
+        enrollments: Number,
+        gross: Number,
+        net: Number
+    }],
+
+    notes: { type: String, trim: true }
+}, {
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+    toJSON: { virtuals: true }
+})
+
+payoutSchema.index({ instructor_id: 1, period_start: -1 })
+payoutSchema.index({ status: 1, period_end: -1 })
+payoutSchema.virtual('id').get(function () { return this._id.toHexString() })
+
+const InstructorPayout = mongoose.model('InstructorPayout', payoutSchema)
+
+module.exports = InstructorPayout

@@ -1,119 +1,44 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose')
 
-const progressSchema = new mongoose.Schema({
-  progress_id: String,
-  user_id: String,
-  course_id: String,
-  module_id: String,
-  lesson_id: String,
-  completed: Boolean,
-  completion_time: Number,
-  updated_at: Date
-});
+const userDashboardSchema = new mongoose.Schema({
+    user_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+        unique: true
+    },
 
-module.exports = mongoose.model("Progress", progressSchema);
+    // Learning streak (InstructorProfile achievements: 7-day-streak)
+    current_streak: { type: Number, default: 0, min: 0 },
+    longest_streak: { type: Number, default: 0, min: 0 },
+    last_study_date: { type: Date },
+    total_study_days: { type: Number, default: 0, min: 0 },
+    total_watch_time_seconds: { type: Number, default: 0, min: 0 },
 
+    // Summary counters (denormalised for fast dashboard load)
+    enrolled_courses_count: { type: Number, default: 0, min: 0 },
+    completed_courses_count: { type: Number, default: 0, min: 0 },
+    certificates_earned: { type: Number, default: 0, min: 0 },
+    total_quiz_attempts: { type: Number, default: 0, min: 0 },
+    avg_quiz_score: { type: Number, default: 0, min: 0, max: 100 },
 
-/* =====================================================
-Index Optimization
-===================================================== */
+    // Learning goal (Dashboard progress bar)
+    weekly_goal_minutes: { type: Number, default: 60 },
+    weekly_minutes_this_week: { type: Number, default: 0 },
 
-// Index for user progress lookup
-progressSchema.index({ user_id:1 });
+    // Recently viewed (for quick resume)
+    recently_viewed: [{
+        course_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
+        lesson_id: { type: mongoose.Schema.Types.ObjectId },
+        viewed_at: { type: Date, default: Date.now }
+    }]
+}, {
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+})
 
-// Index for course progress tracking
-progressSchema.index({ course_id:1 });
+userDashboardSchema.index({ user_id: 1 }, { unique: true })
+userDashboardSchema.index({ current_streak: -1 })
 
-// Index for module progress tracking
-progressSchema.index({ module_id:1 });
+const UserDashboard = mongoose.model('UserDashboard', userDashboardSchema)
 
-// Index for lesson progress tracking
-progressSchema.index({ lesson_id:1 });
-
-// Compound index for user + course queries
-progressSchema.index({ user_id:1, course_id:1 });
-
-// Index for latest progress updates
-progressSchema.index({ updated_at:-1 });
-
-
-
-/* =====================================================
-Partial Indexing
-===================================================== */
-
-// Index only completed lessons
-progressSchema.index(
-{ completed:1 },
-{ partialFilterExpression:{ completed:true } }
-);
-
-// Index records where completion_time exists
-progressSchema.index(
-{ completion_time:1 },
-{ partialFilterExpression:{ completion_time:{ $exists:true } } }
-);
-
-
-
-/* =====================================================
-Stored Procedures (Model Methods)
-===================================================== */
-
-// Get progress by user
-progressSchema.statics.getProgressByUser = function(userId){
-return this.find({ user_id:userId });
-};
-
-// Get progress for a course
-progressSchema.statics.getCourseProgress = function(userId,courseId){
-return this.find({ user_id:userId, course_id:courseId });
-};
-
-// Mark lesson as completed
-progressSchema.statics.markLessonCompleted = function(progressId,time){
-return this.findOneAndUpdate(
-{ progress_id:progressId },
-{ completed:true, completion_time:time, updated_at:new Date() },
-{ new:true }
-);
-};
-
-
-
-/* =====================================================
-Views (Aggregation Pipelines)
-===================================================== */
-
-// View: course completion stats
-progressSchema.statics.courseCompletionView = function(){
-return this.aggregate([
-{
-$match:{ completed:true }
-},
-{
-$group:{
-_id:"$course_id",
-completed_lessons:{ $sum:1 }
-}
-},
-{
-$sort:{ completed_lessons:-1 }
-}
-]);
-};
-
-// View: user learning progress
-progressSchema.statics.userProgressView = function(){
-return this.aggregate([
-{
-$group:{
-_id:"$user_id",
-total_lessons_completed:{ $sum:{ $cond:["$completed",1,0] } }
-}
-},
-{
-$sort:{ total_lessons_completed:-1 }
-}
-]);
-};
+module.exports = UserDashboard
